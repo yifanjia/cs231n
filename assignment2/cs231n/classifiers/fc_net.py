@@ -125,35 +125,42 @@ class TwoLayerNet(object):
 
         return loss, grads
     
-# helper for combining affine, batch norm and relu 
-def affine_batchnorm_relu_forward(x, w, b, gamma, beta, bn_param):
+# helper for combining affine, batch/layer norm and relu 
+def affine_norm_relu_forward(x, w, b, gamma, beta, bn_param, batchmode):
     """
     Convenience layer that peforms an affine transform followed by batchnorm and a ReLU
 
     Inputs:
     - x: Input to the affine layer
     - w, b: Weights for the affine layer
-    - gamme, beta: scale and shift paramters for batch norm
-    - bn_param: dict contain paramters for batchnorm
+    - gamme, beta: scale and shift paramters for norm
+    - bn_param: dict contain paramters for norm
+    - batchmode: "batchnorm" or "layernorm"
 
     Returns a tuple of:
     - out: Output from the ReLU
     - cache: Object to give to the backward pass
     """
     a, fc_cache = affine_forward(x, w, b)
-    m, batchnorm_cache = batchnorm_forward(a, gamma, beta, bn_param)
+    if batchmode == "batchnorm":
+        m, batchnorm_cache = batchnorm_forward(a, gamma, beta, bn_param)
+    elif batchmode == "layernorm":
+        m, batchnorm_cache = layernorm_forward(a, gamma, beta, bn_param)
     out, relu_cache = relu_forward(m)
     cache = (fc_cache, batchnorm_cache, relu_cache)
     return out, cache
 
 
-def affine_batchnorm_relu_backward(dout, cache):
+def affine_norm_relu_backward(dout, cache, batchmode):
     """
     Backward pass for the affine-batch_norm-relu convenience layer
     """
     fc_cache, batchnorm_cache, relu_cache = cache
     da = relu_backward(dout, relu_cache)
-    dm, dgamma, dbeta = batchnorm_backward_alt(da, batchnorm_cache)
+    if batchmode == "batchnorm":
+        dm, dgamma, dbeta = batchnorm_backward_alt(da, batchnorm_cache)
+    elif batchmode == "layernorm":
+        dm, dgamma, dbeta = layernorm_backward(da, batchnorm_cache)
     dx, dw, db = affine_backward(dm, fc_cache)
     return dx, dw, db, dgamma, dbeta
 
@@ -228,7 +235,7 @@ class FullyConnectedNet(object):
                 self.params["b" + str(i)] = np.zeros(num_classes)
                 self.params["W" + str(i)] = weight_scale * np.random.randn(in_dim, num_classes)   
         # initialize the paramters for batch normalization when used
-        if self.normalization == "batchnorm":
+        if self.normalization == "batchnorm" or self.normalization == "layernorm":
             for i in range(1, self.num_layers):
                 self.params["gamma" + str(i)] = np.ones(hidden_dims[i - 1])
                 self.params["beta" + str(i)] = np.zeros(hidden_dims[i - 1])
@@ -300,10 +307,12 @@ class FullyConnectedNet(object):
                 if self.normalization != "batchnorm" and self.normalization != "layernorm":
                     # no normalization: affine + relu
                     scores, cache_lst[i - 1] =  affine_relu_forward(scores, self.params["W" + str(i)], self.params["b" + str(i)])
-                elif self.normalization == "batchnorm":
-                    # batch norm before relu
-                    scores, cache_lst[i - 1] = affine_batchnorm_relu_forward(scores, self.params["W" + str(i)], \
-                    self.params["b" + str(i)], self.params["gamma" + str(i)], self.params["beta" + str(i)], self.bn_params[i - 1])
+                else:
+                    # batch/layeer norm before relu
+                    scores, cache_lst[i - 1] = affine_norm_relu_forward(scores, self.params["W" + str(i)], \
+                    self.params["b" + str(i)], self.params["gamma" + str(i)], self.params["beta" + str(i)],\
+                    self.bn_params[i - 1], self.normalization)
+                    
             else:       
                 # last layer:only affine
                 scores, cache_lst[i - 1] =  affine_forward(scores, self.params["W" + str(i)], self.params["b" + str(i)])
@@ -346,8 +355,8 @@ class FullyConnectedNet(object):
                 if self.normalization != "batchnorm" and self.normalization != "layernorm":
                     # no normalization
                     dout, grads["W" + str(i)], grads["b" + str(i)] = affine_relu_backward(dout, cache)
-                elif self.normalization == "batchnorm":
-                    dout, grads["W" + str(i)], grads["b" + str(i)], grads["gamma" + str(i)], grads["beta" + str(i)] = affine_batchnorm_relu_backward(dout, cache)
+                else:
+                    dout, grads["W" + str(i)], grads["b" + str(i)], grads["gamma" + str(i)], grads["beta" + str(i)] = affine_norm_relu_backward(dout, cache, self.normalization)
             # grads casue by regularization
             grads["W" + str(i)] += self.reg * self.params["W" + str(i)]
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
