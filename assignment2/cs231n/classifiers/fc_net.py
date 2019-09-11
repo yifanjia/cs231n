@@ -301,8 +301,13 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         cache_lst = [None] * self.num_layers
+        if self.use_dropout:
+            dropout_cache_lst = [None] * self.num_layers
         scores = X
         for i in range(1, self.num_layers + 1):
+            if self.use_dropout:
+                # dropout layer
+                scores, dropout_cache_lst[i - 1] = dropout_forward(scores, self.dropout_param)
             if i < self.num_layers:
                 if self.normalization != "batchnorm" and self.normalization != "layernorm":
                     # no normalization: affine + relu
@@ -357,7 +362,10 @@ class FullyConnectedNet(object):
                     dout, grads["W" + str(i)], grads["b" + str(i)] = affine_relu_backward(dout, cache)
                 else:
                     dout, grads["W" + str(i)], grads["b" + str(i)], grads["gamma" + str(i)], grads["beta" + str(i)] = affine_norm_relu_backward(dout, cache, self.normalization)
-            # grads casue by regularization
+            if self.use_dropout:
+                # dropout layer
+                dout = dropout_backward(dout, dropout_cache_lst.pop())
+            # grads caused by regularization
             grads["W" + str(i)] += self.reg * self.params["W" + str(i)]
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
