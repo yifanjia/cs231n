@@ -193,9 +193,20 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # might prove to be helpful.                                          #
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
-
+        # calculate the mean and vae
+        mean = np.mean(x, axis = 0)
+        var = np.var(x, axis = 0)
+        # normalize the incoming data
+        differ_x = x - mean
+        std = np.sqrt(var + eps)
+        normal_x = differ_x / std
+        # use gamma and beta to set x
+        out = gamma * normal_x + beta
+        # store the raw x, the x after transform, the gamma and beta and the running mean and var for backprop and the eps
+        cache = (normal_x, std, differ_x, gamma)
+        # update the running mean and variance
+        running_mean = momentum * running_mean + (1 - momentum) * mean
+        running_var = momentum * running_var + (1 - momentum) * var
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
         #                           END OF YOUR CODE                          #
@@ -208,9 +219,10 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # Store the result in the out variable.                               #
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
-
+        # normalize the incoming data based on the running mean and var
+        x = (x - running_mean) / np.sqrt(running_var + eps)
+        # use gamma and beta to set x
+        out = gamma * x + beta
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
         #                          END OF YOUR CODE                           #
@@ -223,6 +235,7 @@ def batchnorm_forward(x, gamma, beta, bn_param):
     bn_param['running_var'] = running_var
 
     return out, cache
+
 
 
 def batchnorm_backward(dout, cache):
@@ -250,16 +263,24 @@ def batchnorm_backward(dout, cache):
     # might prove to be helpful.                                              #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    (normal_x, std, differ_x, gamma) = cache
+    N = normal_x.shape[0]
+    # calculate the dgamma and dbeta
+    dgamma = np.sum(dout * normal_x, axis = 0)
+    dbeta = np.sum(dout, axis = 0)
+    # calculate the dx layer by layer
+    dnormal_x = dout * gamma # N * D
+    dvar = np.sum(-0.5 * dnormal_x * differ_x / np.power(std, 3), 0) # D
+    dmean = np.sum(-dnormal_x / std, axis = 0) + dvar * (-2) * np.mean(differ_x, axis = 0) # D
+    dx = dnormal_x / std + dvar * 2 * differ_x / N + dmean / N
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
-
+    
+    
     return dx, dgamma, dbeta
-
 
 def batchnorm_backward_alt(dout, cache):
     """
@@ -285,8 +306,13 @@ def batchnorm_backward_alt(dout, cache):
     # single statement; our implementation fits on a single 80-character line.#
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    (normal_x, std, differ_x, gamma) = cache
+    # calculate the dgamma and dbeta
+    dgamma = np.sum(dout * normal_x, axis = 0)
+    dbeta = np.sum(dout, axis = 0)
+    # calculate the dx 
+    dnormal_x = dout * gamma # N * D
+    dx = (dnormal_x - np.mean(dnormal_x, axis = 0)) / std - differ_x * np.mean(dnormal_x * normal_x / np.power(std, 2), axis = 0)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -331,9 +357,22 @@ def layernorm_forward(x, gamma, beta, ln_param):
     # the batch norm code and leave it almost unchanged?                      #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
-
+    eps = ln_param.get('eps', 1e-5)
+    N, D = x.shape
+    # transpose to use the batch norm code
+    x = x.T
+    # calculate the mean and vae
+    mean = np.mean(x, axis = 0)
+    var = np.var(x, axis = 0)
+    # normalize the incoming data
+    differ_x = x - mean
+    std = np.sqrt(var + eps)
+    normal_x = differ_x / std
+    # transpose for the corrent result
+    # use gamma and beta to set x
+    out = gamma * normal_x.T + beta
+    # store the raw x, the x after transform, the gamma and beta and the running mean and var for backprop and the eps
+    cache = (normal_x, std, differ_x, gamma)
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -366,8 +405,18 @@ def layernorm_backward(dout, cache):
     # still apply!                                                            #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    (normal_x, std, differ_x, gamma) = cache
+    # calculate the dgamma and dbeta
+    dgamma = np.sum(dout * normal_x.T, axis = 0)
+    dbeta = np.sum(dout, axis = 0)
+    
+    # transpose the dout for using batch norm code
+    dout = dout.T
+    # calculate the dx 
+    dnormal_x = (dout.T * gamma).T # N * D
+    dx = (dnormal_x - np.mean(dnormal_x, axis = 0)) / std - differ_x * np.mean(dnormal_x * normal_x / np.power(std, 2), axis = 0)
+    # transpose back the dx for the correct result
+    dx = dx.T
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################

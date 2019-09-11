@@ -124,7 +124,38 @@ class TwoLayerNet(object):
         ############################################################################
 
         return loss, grads
+    
+# helper for combining affine, batch norm and relu 
+def affine_batchnorm_relu_forward(x, w, b, gamma, beta, bn_param):
+    """
+    Convenience layer that peforms an affine transform followed by batchnorm and a ReLU
 
+    Inputs:
+    - x: Input to the affine layer
+    - w, b: Weights for the affine layer
+    - gamme, beta: scale and shift paramters for batch norm
+    - bn_param: dict contain paramters for batchnorm
+
+    Returns a tuple of:
+    - out: Output from the ReLU
+    - cache: Object to give to the backward pass
+    """
+    a, fc_cache = affine_forward(x, w, b)
+    m, batchnorm_cache = batchnorm_forward(a, gamma, beta, bn_param)
+    out, relu_cache = relu_forward(m)
+    cache = (fc_cache, batchnorm_cache, relu_cache)
+    return out, cache
+
+
+def affine_batchnorm_relu_backward(dout, cache):
+    """
+    Backward pass for the affine-batch_norm-relu convenience layer
+    """
+    fc_cache, batchnorm_cache, relu_cache = cache
+    da = relu_backward(dout, relu_cache)
+    dm, dgamma, dbeta = batchnorm_backward_alt(da, batchnorm_cache)
+    dx, dw, db = affine_backward(dm, fc_cache)
+    return dx, dw, db, dgamma, dbeta
 
 class FullyConnectedNet(object):
     """
@@ -191,12 +222,16 @@ class FullyConnectedNet(object):
             # initialize each w and b and insert into the params dictionary
             if i != self.num_layers:
                 self.params["b" + str(i)] = np.zeros(hidden_dims[i - 1])
-                # print(str(i) + " " + str(self.num_layers))
                 self.params["W" + str(i)] = weight_scale * np.random.randn(in_dim, hidden_dims[i - 1])
                 in_dim = hidden_dims[i - 1]
             else:
                 self.params["b" + str(i)] = np.zeros(num_classes)
                 self.params["W" + str(i)] = weight_scale * np.random.randn(in_dim, num_classes)   
+        # initialize the paramters for batch normalization when used
+        if self.normalization == "batchnorm":
+            for i in range(1, self.num_layers):
+                self.params["gamma" + str(i)] = np.ones(hidden_dims[i - 1])
+                self.params["beta" + str(i)] = np.zeros(hidden_dims[i - 1])
             
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -218,7 +253,7 @@ class FullyConnectedNet(object):
         # of the first batch normalization layer, self.bn_params[1] to the forward
         # pass of the second batch normalization layer, etc.
         self.bn_params = []
-        if self.normalization=='batchnorm':
+        if self.normalization =='batchnorm':
             self.bn_params = [{'mode': 'train'} for i in range(self.num_layers - 1)]
         if self.normalization=='layernorm':
             self.bn_params = [{} for i in range(self.num_layers - 1)]
@@ -262,8 +297,13 @@ class FullyConnectedNet(object):
         scores = X
         for i in range(1, self.num_layers + 1):
             if i < self.num_layers:
-                # affine + relu
-                scores, cache_lst[i - 1] =  affine_relu_forward(scores, self.params["W" + str(i)], self.params["b" + str(i)])
+                if self.normalization != "batchnorm" and self.normalization != "layernorm":
+                    # no normalization: affine + relu
+                    scores, cache_lst[i - 1] =  affine_relu_forward(scores, self.params["W" + str(i)], self.params["b" + str(i)])
+                elif self.normalization == "batchnorm":
+                    # batch norm before relu
+                    scores, cache_lst[i - 1] = affine_batchnorm_relu_forward(scores, self.params["W" + str(i)], \
+                    self.params["b" + str(i)], self.params["gamma" + str(i)], self.params["beta" + str(i)], self.bn_params[i - 1])
             else:       
                 # last layer:only affine
                 scores, cache_lst[i - 1] =  affine_forward(scores, self.params["W" + str(i)], self.params["b" + str(i)])
@@ -298,12 +338,17 @@ class FullyConnectedNet(object):
             # regularization loss
             loss += 0.5 * self.reg * np.sum(self.params["W" + str(i)] * self.params["W" + str(i)])
         for i in range(self.num_layers, 0, -1):
-            cache = cache_lst[i - 1]
+            cache = cache_lst.pop()
             if i == self.num_layers:
                 # the last layer
                 dout, grads["W" + str(i)], grads["b" + str(i)] = affine_backward(dout, cache)
             else:
-                dout, grads["W" + str(i)], grads["b" + str(i)] = affine_relu_backward(dout, cache)
+                if self.normalization != "batchnorm" and self.normalization != "layernorm":
+                    # no normalization
+                    dout, grads["W" + str(i)], grads["b" + str(i)] = affine_relu_backward(dout, cache)
+                elif self.normalization == "batchnorm":
+                    dout, grads["W" + str(i)], grads["b" + str(i)], grads["gamma" + str(i)], grads["beta" + str(i)] = affine_batchnorm_relu_backward(dout, cache)
+            # grads casue by regularization
             grads["W" + str(i)] += self.reg * self.params["W" + str(i)]
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
