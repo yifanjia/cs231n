@@ -54,8 +54,23 @@ class ThreeLayerConvNet(object):
         # the start of the loss() function to see how that happens.                #                           
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
+        C, H, W = input_dim 
+        pool_param = {'pool_height': 2, 'pool_width': 2, 'stride': 2}
+        # initialize the w and b parameters in the params
+        self.params["W1"] = np.random.randn(num_filters, C, filter_size, filter_size) * weight_scale
+        self.params["b1"] = np.zeros((num_filters))
+        
+        # the H and W are preserved according to assumption; caculate the h and w after pooling
+        pool_height = pool_param["pool_height"]
+        pool_width = pool_param["pool_width"]
+        stride = pool_param["stride"]
+        ht = 1 + (H - pool_height) // stride
+        wd = 1 + (W - pool_width) // stride
+        
+        self.params["W2"] = np.random.randn(ht * wd * num_filters, hidden_dim) * weight_scale
+        self.params["b2"] = np.zeros(hidden_dim)
+        self.params["W3"] = np.random.randn(hidden_dim, num_classes) * weight_scale
+        self.params["b3"] = np.zeros(num_classes)
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -94,8 +109,17 @@ class ThreeLayerConvNet(object):
         # cs231n/layer_utils.py in your implementation (already imported).         #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
+        # conv-relu-pool layers
+        cacheLst = [None] * 3
+        scores, cacheLst[0] = conv_relu_pool_forward(X, W1, b1, conv_param, pool_param)  
+        # unravel the last three dimention of the scores
+        scores = scores.reshape(scores.shape[0], scores.shape[1] * scores.shape[2] * scores.shape[3])
+        # affine-relu layers
+        scores, cacheLst[1] = affine_relu_forward(scores, W2, b2)
+        # affine layer
+        scores, cacheLst[2] = affine_forward(scores, W3, b3)
+        
+                  
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -117,9 +141,27 @@ class ThreeLayerConvNet(object):
         # of 0.5 to simplify the expression for the gradient.                      #
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-        pass
-
+        # softmax to calculate loss
+        loss, dout = softmax_loss(scores, y)
+        # add the regularization term
+        loss += (np.sum(W1 * W1) + np.sum(W2 * W2) + np.sum(W3 * W3)) * self.reg / 2
+        # backprop
+        dout, grads["W3"], grads["b3"] = affine_backward(dout, cacheLst.pop())
+        dout, grads["W2"], grads["b2"]  = affine_relu_backward(dout, cacheLst.pop())
+        
+        # reshape the 2-d dout into 4-d
+        pool_height = pool_param["pool_height"]
+        pool_width = pool_param["pool_width"]
+        stride = pool_param["stride"]
+        H, W = X.shape[2], X.shape[3]
+        ht = 1 + (H - pool_height) // stride
+        wd = 1 + (W - pool_width) // stride
+        dout = np.reshape(dout, (dout.shape[0], -1, ht, wd))
+        _, grads["W1"], grads["b1"]  = conv_relu_pool_backward(dout, cacheLst.pop())
+        # add the regularization term
+        grads["W1"] += W1 * self.reg
+        grads["W2"] += W2 * self.reg
+        grads["W3"] += W3 * self.reg
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
