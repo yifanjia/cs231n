@@ -285,8 +285,16 @@ def lstm_step_forward(x, prev_h, prev_c, Wx, Wh, b):
     # You may want to use the numerically stable sigmoid implementation above.  #
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
+    H = prev_h.shape[1]
+    a = np.dot(x, Wx) + np.dot(prev_h, Wh) + b # (N, 4H)
+    ai, af, ao, ag = a[:, 0 : H], a[:, H : 2 * H], a[:, 2 * H : 3 * H], a[:, 3 * H:]
+    # calculate the input foget, output gate and block input g
+    i, f, o, g = sigmoid(ai), sigmoid(af), sigmoid(ao), np.tanh(ag)
+    # calcualte the cell t and then get the next hidden state
+    next_c = f * prev_c + i * g
+    tanh_next_c = np.tanh(next_c)
+    next_h = o * tanh_next_c
+    cache = (prev_c, prev_h, Wh, x, Wx, tanh_next_c, i, f, o, g)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -322,7 +330,29 @@ def lstm_step_backward(dnext_h, dnext_c, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, H = dnext_h.shape
+    (prev_c, prev_h, Wh, x, Wx, tanh_next_c, i, f, o, g) = cache
+    # add the d from dnext_h to dnext_c
+    dnext_c += dnext_h * o * (1 - tanh_next_c ** 2)
+    # calculate the dprev_c
+    dprev_c = dnext_c * f
+    # calculate the grad for gates i, f, o and block input g,a 
+    di = dnext_c * g
+    df = dnext_c * prev_c
+    do = dnext_h * tanh_next_c
+    dg = dnext_c * i
+    # calcuate the grads of ai, af, ao, and ag and  fill in da
+    da = np.zeros((N, 4 * H))
+    da[:, 0 : H] = di * i * (1 - i)
+    da[:, H : 2 * H] = df * f * (1 - f)
+    da[:, 2 * H : 3 * H] = do * o * (1 - o)
+    da[:, 3 * H :] = dg * (1 - g ** 2)
+    # calculate the dx, dprev_h, dWx, dWh, db from da
+    dx = np.dot(da, Wx.T)
+    dWx = np.dot(x.T, da)
+    db = np.sum(da, axis = 0)
+    dprev_h = np.dot(da, Wh.T)
+    dWh = np.dot(prev_h.T, da)    
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -361,7 +391,16 @@ def lstm_forward(x, h0, Wx, Wh, b):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, T, D = x.shape
+    h = [None] * T
+    cache = [None] * T
+    prev_h = h0
+    prev_c = np.zeros_like(prev_h)
+    for i in range(T):
+        prev_h, prev_c, cache[i] = lstm_step_forward(x[:, i, :], prev_h, prev_c, Wx, Wh, b)
+        h[i] = prev_h
+    # convert h to np array and make the transpose
+    h = np.array(h).transpose([1, 0, 2])
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################
@@ -393,7 +432,21 @@ def lstm_backward(dh, cache):
     #############################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    dWx, dWh, db = 0, 0, 0
+    N, T, H = dh.shape
+    dx = [None] * T
+    dnext_h_to_now = 0 #Th dh from the next phase to now
+    dnow_c = 0 #Th dc from the next phase to now
+    for i in range(T - 1, -1, -1):
+        dnow_h = dh[:, i, :] + dnext_h_to_now 
+        # go one more step backwards
+        dx[i], dnext_h_to_now, dnow_c, dWx_ele, dWh_ele, db_ele = \
+        lstm_step_backward(dnow_h, dnow_c, cache[i])
+        dWx += dWx_ele
+        dWh += dWh_ele
+        db += db_ele
+    dh0 = dnext_h_to_now
+    dx = np.array(dx).transpose([1, 0, 2])
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ##############################################################################

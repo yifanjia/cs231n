@@ -151,6 +151,8 @@ class CaptioningRNN(object):
         # 3:use RNN or LSTM for a full forward pass:h (N, T, H)
         if self.cell_type == "rnn":
             h, caches[2] = rnn_forward(x, h0, Wx, Wh, b)
+        else:
+            h, caches[2] = lstm_forward(x, h0, Wx, Wh, b)
         # 4:compute scores for each time step:scores (N, T, V)
         scores, caches[3] = temporal_affine_forward(h, W_vocab, b_vocab)
         # 5:use softmax to calculate the loss and dscore
@@ -162,6 +164,8 @@ class CaptioningRNN(object):
         # backward for step 3:
         if self.cell_type == "rnn":
             dx, dh0, grads["Wx"], grads["Wh"], grads["b"] = rnn_backward(dh, caches.pop())
+        else:
+            dx, dh0, grads["Wx"], grads["Wh"], grads["b"] = lstm_backward(dh, caches.pop())
         # backward for step 2:
         grads["W_embed"] = word_embedding_backward(dx, caches.pop())
         # backward for step 1:
@@ -234,12 +238,16 @@ class CaptioningRNN(object):
         ###########################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         prev_h, _= affine_forward(features, W_proj, b_proj)
+        prev_c  = 0
         word_idx_array = self.word_to_idx["<START>"] * np.ones((N, 1)).astype(int)
         for i in range(max_length):
             # 1.convert features to embedded vectors x:(N, 1, D)
             x, _ = word_embedding_forward(word_idx_array, W_embed)
             # 2. make NN step and get the new hidden state prev_h (N, H)
-            prev_h, _ = rnn_step_forward(x.reshape((N, -1)), prev_h, Wx, Wh, b)
+            if self.cell_type == "rnn":
+                prev_h, _ = rnn_step_forward(x.reshape((N, -1)), prev_h, Wx, Wh, b)
+            else:
+                prev_h, prev_c, _ = lstm_step_forward(x.reshape((N, -1)), prev_h, prev_c, Wx, Wh, b)
             # 3. get scores:(N, V)
             scores, _ = affine_forward(prev_h, W_vocab, b_vocab)
             # 4. select the index of the generated word and put into captions
